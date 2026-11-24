@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/* ── 디자인 토큰 (prd/design.md §2) ───────────────────────── */
+:root {
+  --bg: #dce3f5;
+  --primary: #1e2a5a;
+  --primary-soft: #c9d3f2;
+  --accent: #ffd166;
+  --shadow: #bcc8e8;
+  --ink: #141b36;
+  --muted: #4a5274;
+  --card: #ffffff;
+  --done: #fff7dc;
+  --surface: #eef1fa;
+  --surface-hover: #dfe5f5;
+  --danger: #a3172f;
+  --reward: #8a5a00;
+
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-page: var(--bg);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-edge: var(--shadow);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-done: var(--done);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-danger: var(--danger);
+  --color-reward: var(--reward);
+
+  --font-sans: var(--font-noto), "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-display: var(--font-jua), var(--font-noto), sans-serif;
+}
+
+/* 기존 화면의 회색·남색·빨강 계열을 디자인 팔레트로 맞춘다 */
+@theme {
+  --color-slate-50: #f5f7fd;
+  --color-slate-100: #eef1fa;
+  --color-slate-200: #dfe5f5;
+  --color-slate-300: #bcc8e8;
+  --color-slate-400: #8c96b8;
+  --color-slate-500: #5a638a;
+  --color-slate-600: #4a5274;
+  --color-slate-700: #363e62;
+  --color-slate-800: #232b4e;
+  --color-slate-900: #141b36;
+
+  --color-indigo-50: #eef1fa;
+  --color-indigo-100: #c9d3f2;
+  --color-indigo-200: #a9b7e6;
+  --color-indigo-300: #8394d4;
+  --color-indigo-500: #3a4a8c;
+  --color-indigo-600: #1e2a5a;
+  --color-indigo-700: #1e2a5a;
+  --color-indigo-800: #141b36;
+  --color-indigo-900: #0f1530;
+
+  --color-red-50: #fde2e6;
+  --color-red-300: #f2a6b2;
+  --color-red-700: #a3172f;
+
+  --color-amber-50: #fff7dc;
+  --color-amber-100: #ffefd9;
+  --color-amber-200: #ffe3a8;
+  --color-amber-300: #ffd166;
+  --color-amber-700: #8a5a00;
+  --color-amber-800: #8a4a00;
+  --color-amber-900: #6b3a00;
+
+  --color-emerald-50: #e3f6ea;
+  --color-emerald-300: #9fd9b4;
+  --color-emerald-600: #1f7a46;
+  --color-emerald-800: #17663a;
+  --color-emerald-900: #0f4d2a;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+}
+
+@layer base {
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+}
+
+/* ── 공용 컴포넌트 (design.md §4) — utilities가 덮어쓸 수 있도록 components 레이어 ── */
+@layer components {
+  .jua {
+    font-family: var(--font-display);
+    font-weight: 400;
+  }
+
+  .btn,
+  .btn-primary,
+  .btn-gold,
+  .btn-danger,
+  .btn-ghost {
+    @apply inline-flex min-h-11 items-center justify-center gap-1 rounded-xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn {
+    @apply bg-surface text-ink enabled:hover:bg-surface-hover;
+  }
+  a.btn:hover {
+    @apply bg-surface-hover;
+  }
+  .btn-primary {
+    @apply bg-primary text-white enabled:hover:brightness-125;
+  }
+  .btn-gold {
+    @apply bg-accent text-ink enabled:hover:brightness-105;
+  }
+  .btn-danger {
+    @apply bg-danger text-white enabled:hover:brightness-125;
+  }
+  .btn-ghost {
+    @apply border-2 border-white/50 bg-transparent text-sm text-white hover:bg-white/12;
+  }
+  .icon-btn {
+    @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-surface text-muted transition enabled:hover:bg-surface-hover enabled:hover:text-ink disabled:opacity-40;
+  }
+  .add-btn {
+    @apply min-h-11 rounded-2xl border-2 border-dashed border-muted bg-transparent px-3 text-[15px] font-bold text-muted transition hover:bg-white/50;
+  }
+
+  .input {
+    @apply min-h-11 w-full min-w-0 rounded-xl border-2 border-edge bg-white px-3 py-2 text-base text-ink placeholder:text-slate-400 focus:border-primary focus:outline-none;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-bold text-ink;
+  }
+  .hint {
+    @apply text-xs text-muted;
+  }
+
+  .card-panel {
+    @apply rounded-2xl bg-card p-4 shadow-[0_4px_0_var(--shadow)] sm:px-[18px];
+  }
+  .count-pill {
+    @apply rounded-xl bg-primary px-2.5 py-0.5 text-sm font-bold text-white;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-bold;
+  }
+  .alert-error {
+    @apply rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700;
+  }
+}
