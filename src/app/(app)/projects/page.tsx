@@ -36,9 +36,6 @@ export default async function ProjectsPage() {
             </Link>
             {p.goal && <p className="line-clamp-2 text-sm text-muted">{p.goal}</p>}
             <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-              <span className={`badge ${p.flow === "sequential" ? "bg-amber-100 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
-                {p.flow === "sequential" ? "순차형" : "병렬형"}
-              </span>
               {p.start_date ?? "?"} ~ {p.end_date ?? "?"}
             </p>
             {me.role === "teacher" && <ProjectActions project={p} />}

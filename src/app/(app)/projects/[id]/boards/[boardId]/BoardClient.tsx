@@ -9,7 +9,6 @@ import { pathTo } from "@/lib/tree";
 import { HIDE_MODE_LABEL } from "@/lib/hiding";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
-import { BoardTree } from "@/components/BoardTree";
 import { Kanban } from "@/components/kanban/Kanban";
 import { BoardSettings, type PermissionRow, type StudentLite } from "@/components/board/BoardSettings";
 import { CriteriaPanel, MyEvaluationPanel } from "@/components/board/CriteriaPanel";
@@ -65,20 +64,9 @@ export function BoardClient({
   const b = view?.board;
 
   return (
-    <div className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-3 px-3 pt-3 sm:px-6 lg:flex-row lg:gap-[22px]">
-      <aside className="card-panel h-fit lg:sticky lg:top-24 lg:w-64 lg:shrink-0">
-        <details className="lg:hidden">
-          <summary className="flex min-h-11 cursor-pointer items-center text-[15px] font-bold text-ink">보드 목록</summary>
-          <div className="mt-2">
-            <BoardTree projectId={project.id} nodes={tree} currentId={boardId} isTeacher={isTeacher} />
-          </div>
-        </details>
-        <div className="hidden lg:block">
-          <BoardTree projectId={project.id} nodes={tree} currentId={boardId} isTeacher={isTeacher} />
-        </div>
-      </aside>
+    <div className="flex w-full min-w-0 flex-1 flex-col">
       <main className="flex min-w-0 flex-1 flex-col">
-        <nav aria-label="경로" className="px-3 text-sm text-muted" data-testid="breadcrumb">
+        <nav aria-label="경로" className="px-1 text-sm text-muted" data-testid="breadcrumb">
           <ol className="flex flex-wrap items-center gap-1">
             <li>
               <Link href={`/projects/${project.id}`} className="hover:underline">
@@ -108,7 +96,7 @@ export function BoardClient({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2 px-1 py-3">
               <h1 className="text-[32px] leading-tight break-keep text-ink sm:text-4xl" data-testid="board-title">
                 {b.title}
               </h1>
@@ -164,7 +152,6 @@ export function BoardClient({
         <BoardSettings
           view={view}
           projectId={project.id}
-          projectFlow={project.flow}
           tree={tree}
           students={students}
           permissions={permissions}

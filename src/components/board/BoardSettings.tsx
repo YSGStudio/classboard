@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import type { Access, BoardView, TreeNode } from "@/lib/types";
 import type { Criterion } from "@/lib/criteria";
 import { HIDE_MODE_LABEL, type HideMode } from "@/lib/hiding";
-import { MAX_COLUMNS, MIN_COLUMNS } from "@/lib/columns";
+import { COLUMN_PALETTE, MAX_COLUMNS, MIN_COLUMNS } from "@/lib/columns";
 import { descendants } from "@/lib/tree";
+import { FIELD_TYPE_LABEL, MAX_CARD_FIELDS, MAX_FIELD_LABEL, newFieldId, type CardField, type CardFieldType } from "@/lib/card-fields";
 import {
   addColumn,
   createPersonalBoards,
@@ -26,31 +27,35 @@ export type StudentLite = { id: string; display_name: string; login_id: string; 
 export type PermissionRow = { student_id: string; access: Access };
 
 const ACCESS_LABEL: Record<Access, string> = { none: "없음", read: "읽기", edit: "수정" };
-const TABS = ["일반", "열", "가리기", "권한", "개인 보드", "평가 기준"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = ["일반", "열", "카드 형식", "가리기", "권한", "개인 보드", "평가 기준"] as const;
+export type Tab = (typeof TABS)[number];
 
-export function BoardSettings({
-  view,
-  projectId,
-  projectFlow,
-  tree,
-  students,
-  permissions,
-  myCriteria,
-  onChanged,
-  onClose,
-}: {
+type PanelProps = {
   view: BoardView;
   projectId: string;
-  projectFlow: "sequential" | "parallel";
   tree: TreeNode[];
   students: StudentLite[];
   permissions: PermissionRow[];
   myCriteria: Criterion[];
   onChanged: () => void;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = useState<Tab>("일반");
+  /** 삭제 후 이동. 없으면 보드 화면 기준(부모 보드 또는 프로젝트 메인)으로 이동 */
+  onDeleted?: (parentId: string | null) => void;
+  initialTab?: Tab;
+};
+
+/** 보드 설정 내용(탭 + 각 탭). 보드 화면의 설정 창과 작업장 설정 페이지가 함께 쓴다. */
+export function BoardSettingsPanel({
+  view,
+  projectId,
+  tree,
+  students,
+  permissions,
+  myCriteria,
+  onChanged,
+  onDeleted,
+  initialTab = "일반",
+}: PanelProps) {
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [pending, start] = useTransition();
@@ -72,60 +77,90 @@ export function BoardSettings({
       router.refresh();
     });
 
-  const tabs = personal ? TABS.filter((t) => t !== "가리기" && t !== "개인 보드" && t !== "평가 기준") : TABS;
+  const tabs: readonly Tab[] = personal ? TABS.filter((t) => t !== "가리기" && t !== "개인 보드" && t !== "평가 기준" && t !== "카드 형식") : TABS;
+  const current: Tab = tabs.includes(tab) ? tab : "일반";
 
+  return (
+    <div className="flex flex-col">
+      <div className="flex flex-wrap gap-1.5 border-b-2 border-surface pb-3" role="tablist" aria-label="설정 항목">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={current === t}
+            className={`min-h-10 rounded-xl px-3 text-sm font-bold transition ${current === t ? "bg-primary text-white" : "bg-surface text-muted hover:bg-surface-hover hover:text-ink"}`}
+            onClick={() => setTab(t)}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col gap-4 pt-4" role="tabpanel">
+        {error && (
+          <p role="alert" className="alert-error">
+            {error}
+          </p>
+        )}
+        {info && (
+          <p className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800" data-testid="settings-info">
+            {info}
+          </p>
+        )}
+        {current === "일반" && (
+          <GeneralTab
+            view={view}
+            projectId={projectId}
+            tree={tree}
+            pending={pending}
+            run={run}
+            onDeleted={
+              onDeleted ?? ((parentId) => router.push(parentId ? `/projects/${projectId}/boards/${parentId}` : `/projects/${projectId}`))
+            }
+            setError={setError}
+          />
+        )}
+        {current === "열" && <ColumnsTab view={view} pending={pending} run={run} />}
+        {current === "카드 형식" && <CardFormatTab key={JSON.stringify(b.card_fields ?? [])} view={view} pending={pending} run={run} />}
+        {current === "가리기" && <HidingTab view={view} pending={pending} run={run} />}
+        {current === "권한" && <PermissionsTab view={view} students={students} permissions={permissions} pending={pending} run={run} />}
+        {current === "개인 보드" && <PersonalTab view={view} students={students} pending={pending} run={run} />}
+        {current === "평가 기준" && (
+          <CriteriaTab
+            view={view}
+            myCriteria={myCriteria}
+            pending={pending}
+            run={run}
+            onChanged={() => {
+              onChanged();
+              router.refresh();
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 보드 화면의 설정 창(오른쪽 서랍) */
+export function BoardSettings({ onClose, ...props }: PanelProps & { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(20,27,54,.45)]" onClick={onClose}>
       <aside
-        className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-card shadow-[0_20px_60px_rgba(20,27,54,.35)]"
+        className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-card p-5 shadow-[0_20px_60px_rgba(20,27,54,.35)]"
         onClick={(e) => e.stopPropagation()}
         aria-label="보드 설정"
         role="dialog"
       >
-        <div className="flex items-center gap-2 border-b-2 border-surface p-3">
-          <h2 className="font-bold">보드 설정</h2>
-          <button className="ml-auto text-2xl leading-none text-slate-500" onClick={onClose} aria-label="설정 닫기">
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-[26px]">보드 설정</h2>
+          <a href={`/projects/${props.projectId}/settings?board=${props.view.board.id}`} className="btn ml-auto">
+            ⚙ 작업장 설정 페이지
+          </a>
+          <button className="icon-btn text-2xl leading-none" onClick={onClose} aria-label="설정 닫기" title="닫기">
             ×
           </button>
         </div>
-        <div className="flex flex-wrap gap-1 border-b-2 border-surface px-3 py-2" role="tablist">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              className={`rounded px-2 py-1 text-sm ${tab === t ? "bg-indigo-600 text-white" : "hover:bg-slate-100"}`}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-4 p-4">
-          {error && (
-            <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-          {info && <p className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800" data-testid="settings-info">{info}</p>}
-          {tab === "일반" && (
-            <GeneralTab
-              view={view}
-              projectId={projectId}
-              projectFlow={projectFlow}
-              tree={tree}
-              pending={pending}
-              run={run}
-              onDeleted={(parentId) => router.push(parentId ? `/projects/${projectId}/boards/${parentId}` : `/projects/${projectId}`)}
-              setError={setError}
-            />
-          )}
-          {tab === "열" && <ColumnsTab view={view} pending={pending} run={run} />}
-          {tab === "가리기" && <HidingTab view={view} pending={pending} run={run} />}
-          {tab === "권한" && <PermissionsTab view={view} students={students} permissions={permissions} pending={pending} run={run} />}
-          {tab === "개인 보드" && <PersonalTab view={view} students={students} pending={pending} run={run} />}
-          {tab === "평가 기준" && <CriteriaTab view={view} myCriteria={myCriteria} pending={pending} run={run} onChanged={() => { onChanged(); router.refresh(); }} />}
-        </div>
+        <BoardSettingsPanel {...props} />
       </aside>
     </div>
   );
@@ -136,7 +171,6 @@ type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, success?: string
 function GeneralTab({
   view,
   projectId,
-  projectFlow,
   tree,
   pending,
   run,
@@ -145,7 +179,6 @@ function GeneralTab({
 }: {
   view: BoardView;
   projectId: string;
-  projectFlow: "sequential" | "parallel";
   tree: TreeNode[];
   pending: boolean;
   run: Run;
@@ -173,12 +206,6 @@ function GeneralTab({
           이름 저장
         </button>
       </form>
-      {projectFlow === "sequential" && b.kind === "shared" && (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={b.unlocked} onChange={(e) => run(() => updateBoardSettings(b.id, { unlocked: e.target.checked }))} />
-          학생에게 이 보드 열기(순차형)
-        </label>
-      )}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span>순서</span>
         <button className="btn" onClick={() => run(() => reorderBoard(b.id, "up"))} disabled={pending}>
@@ -242,10 +269,110 @@ function GeneralTab({
   );
 }
 
+/** 카드 형식: 기본(제목 + 내용) 또는 교사가 레이블과 칸을 추가해 만든 형식 */
+function CardFormatTab({ view, pending, run }: { view: BoardView; pending: boolean; run: Run }) {
+  const saved = view.board.card_fields ?? [];
+  const [fields, setFields] = useState<CardField[]>(saved);
+  const dirty = JSON.stringify(fields) !== JSON.stringify(saved);
+  const set = (i: number, patch: Partial<CardField>) => setFields((cur) => cur.map((f, k) => (k === i ? { ...f, ...patch } : f)));
+  const move = (i: number, d: -1 | 1) =>
+    setFields((cur) => {
+      const j = i + d;
+      if (j < 0 || j >= cur.length) return cur;
+      const n = [...cur];
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+  const save = (next: CardField[], msg: string) => run(() => updateBoardSettings(view.board.id, { card_fields: next }), msg);
+
+  return (
+    <div className="flex flex-col gap-4" data-testid="card-format">
+      <p className="text-sm text-muted">
+        카드를 쓸 때 나오는 칸을 정해요. 항목이 없으면 기본 형식(<b className="text-ink">제목 + 내용</b>)이에요. 제목은 늘 맨 위에 있고,
+        항목을 추가하면 &lsquo;내용&rsquo; 대신 그 칸들이 나와요. 학생 개인 보드는 이 작업장의 형식을 따라요.
+      </p>
+      <div className="flex flex-col gap-2">
+        <div className="flex min-h-11 items-center gap-2 rounded-xl bg-surface px-3 text-sm">
+          <span className="font-bold">제목</span>
+          <span className="text-muted">· 한 줄 · 고정</span>
+        </div>
+        {fields.length === 0 && (
+          <div className="flex min-h-11 items-center gap-2 rounded-xl border-2 border-dashed border-edge px-3 text-sm text-muted">
+            <span className="font-bold">내용</span> · 여러 줄 (기본)
+          </div>
+        )}
+        {fields.map((f, i) => (
+          <div key={f.id} className="flex flex-wrap items-center gap-2 rounded-xl border-2 border-edge p-2" data-testid="card-format-field">
+            <input
+              className="input min-w-0 flex-1"
+              aria-label={`항목 ${i + 1} 레이블`}
+              placeholder="레이블 (예: 읽은 책, 느낀 점)"
+              maxLength={MAX_FIELD_LABEL}
+              value={f.label}
+              onChange={(e) => set(i, { label: e.target.value })}
+            />
+            <select
+              className="input w-auto"
+              aria-label={`항목 ${i + 1} 칸 종류`}
+              value={f.type}
+              onChange={(e) => set(i, { type: e.target.value as CardFieldType })}
+            >
+              {(Object.keys(FIELD_TYPE_LABEL) as CardFieldType[]).map((t) => (
+                <option key={t} value={t}>
+                  {FIELD_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="위로" title="위로">
+              ▲
+            </button>
+            <button type="button" className="icon-btn" onClick={() => move(i, 1)} disabled={i === fields.length - 1} aria-label="아래로" title="아래로">
+              ▼
+            </button>
+            <button
+              type="button"
+              className="icon-btn hover:text-danger"
+              onClick={() => setFields((cur) => cur.filter((_, k) => k !== i))}
+              aria-label={`항목 ${i + 1} 빼기`}
+              title="빼기"
+            >
+              🗑
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="add-btn min-h-11"
+          disabled={fields.length >= MAX_CARD_FIELDS}
+          onClick={() => setFields((cur) => [...cur, { id: newFieldId(), label: "", type: cur.length === 0 ? "long" : "short" }])}
+        >
+          ＋ 항목 추가 {fields.length > 0 && <span className="text-muted">({fields.length}/{MAX_CARD_FIELDS})</span>}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-primary" disabled={pending || !dirty} onClick={() => save(fields, "카드 형식을 저장했어요.")}>
+          형식 저장
+        </button>
+        {dirty && (
+          <button type="button" className="btn" onClick={() => setFields(saved)}>
+            되돌리기
+          </button>
+        )}
+        {saved.length > 0 && (
+          <button type="button" className="btn ml-auto" disabled={pending} onClick={() => save([], "기본 형식(제목 + 내용)으로 바꿨어요.")}>
+            기본 형식으로
+          </button>
+        )}
+      </div>
+      <p className="hint">형식을 바꿔도 이미 쓴 카드의 값은 지워지지 않아요. 뺀 항목은 화면에서만 안 보여요.</p>
+    </div>
+  );
+}
+
 function ColumnsTab({ view, pending, run }: { view: BoardView; pending: boolean; run: Run }) {
   const [name, setName] = useState("");
-  const [color, setColor] = useState("#64748b");
   const cols = [...view.columns].sort((a, b) => a.position - b.position);
+  const [color, setColor] = useState<string>(COLUMN_PALETTE[cols.length % COLUMN_PALETTE.length]);
   return (
     <>
       <p className="text-sm text-slate-600">
@@ -262,6 +389,7 @@ function ColumnsTab({ view, pending, run }: { view: BoardView; pending: boolean;
           e.preventDefault();
           run(() => addColumn(view.board.id, name, color), "열을 추가했습니다.");
           setName("");
+          setColor(COLUMN_PALETTE[(cols.length + 1) % COLUMN_PALETTE.length]);
         }}
       >
         <input className="input" aria-label="새 열 이름" placeholder="새 열 이름" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
@@ -333,7 +461,7 @@ function HidingTab({ view, pending, run }: { view: BoardView; pending: boolean; 
             </label>
           ))}
         </div>
-        <p className="mt-1 text-xs text-slate-500">숨김=안 보임 · 개수만=카드 수만 · 익명=내용은 보이고 작성자 숨김. 교사는 항상 전체를 봅니다.</p>
+        <p className="mt-1 text-xs text-slate-500">숨김=안 보임 · 개수만=카드 수만 · 익명=내용은 보이고 작성자 숨김. 교사는 항상 전체를 보고, 교사가 쓴 카드는 가리기와 상관없이 모두에게 보입니다.</p>
       </fieldset>
       <fieldset>
         <legend className="label">적용할 열</legend>
@@ -472,7 +600,7 @@ function PersonalTab({ view, students, pending, run }: { view: BoardView; studen
   return (
     <>
       <p className="text-sm text-slate-700">
-        이 보드 바로 아래에 학생마다 개인 하위 보드를 하나씩 만듭니다. 이 보드는 그대로 칸반으로 쓸 수 있습니다. 하위 보드는 이 보드의 열 구성을 복사하고, 배당된 학생만 수정할 수 있습니다.
+        이 작업장 바로 아래에 학생마다 개인 보드를 하나씩 만듭니다. 이 작업장은 그대로 칸반으로 쓸 수 있습니다. 개인 보드는 학생 이름 섹션 하나로 시작하고, 배당된 학생과 선생님만 볼 수 있습니다.
       </p>
       {b.auto_personal && <p className="rounded-lg bg-indigo-50 p-2 text-sm text-indigo-900">전체 학생 배당됨 — 새로 등록하는 학생에게도 자동으로 만들어집니다.</p>}
       <fieldset className="flex flex-col gap-1">
@@ -484,7 +612,7 @@ function PersonalTab({ view, students, pending, run }: { view: BoardView; studen
         </label>
       </fieldset>
       {mode === "some" && (
-        <div className="grid max-h-60 grid-cols-2 gap-1 overflow-y-auto rounded-xl border-2 border-edge p-2 text-sm">
+        <div className="grid grid-cols-2 gap-1 rounded-xl border-2 border-edge p-2 text-sm">
           {active.map((s) => (
             <label key={s.id} className="flex items-center gap-1">
               <input
@@ -539,6 +667,22 @@ function CriteriaTab({
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={b.show_criteria} disabled={pending} onChange={(e) => run(() => updateBoardSettings(b.id, { show_criteria: e.target.checked }))} />
         학생에게 기준 미리 보여주기
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={b.peer_review ?? true}
+          disabled={pending}
+          onChange={(e) => run(() => updateBoardSettings(b.id, { peer_review: e.target.checked }))}
+          data-testid="peer-review-toggle"
+        />
+        <span>
+          학생끼리 평가하기(동료평가)
+          <span className="block text-xs text-muted">
+            멤버별 섹션 머리의 ⭐로 친구를 이 기준에 따라 별점으로 평가해요(자기 자신은 안 돼요). 각자 자기 섹션의 📊에서 선생님 평가와 친구 평가 총평균을 봐요. 켜 두면 학생도 기준을 봐요.
+          </span>
+        </span>
       </label>
       <ol className="flex flex-col gap-2">
         {view.criteria.map((c, i) => (

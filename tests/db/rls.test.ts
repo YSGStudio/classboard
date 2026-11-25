@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { issueStudents } from "@/lib/students-core";
 import { BUCKET } from "@/lib/storage-cleanup";
+import { MAX_COLUMNS } from "@/lib/columns";
 import { TEST_PREFIX, admin, expectError, must, seed, signInStudent, signInTeacher } from "./helpers";
 
 let ta: SupabaseClient; // 교사 A
@@ -22,14 +23,21 @@ let project: string;
 const uploaded: string[] = [];
 const tempUsers: string[] = [];
 
-async function newBoard(fields: Record<string, unknown> = {}, client = ta, projectId = project) {
-  return must(
+/** 새 공용 보드는 열 없이 시작하므로, 테스트용으로 열 3개(가·나·다)를 만들어 둔다. withColumns=false면 빈 보드. */
+async function newBoard(fields: Record<string, unknown> = {}, client = ta, projectId = project, withColumns = true) {
+  const id = must(
     await client
       .from("boards")
       .insert({ project_id: projectId, title: `${TEST_PREFIX} 보드`, ...fields })
       .select("id")
       .single(),
   ).id as string;
+  if (withColumns && fields.kind !== "personal") {
+    must(
+      await client.from("columns").insert(["가", "나", "다"].map((name, i) => ({ board_id: id, name, position: i + 1 }))),
+    );
+  }
+  return id;
 }
 
 async function firstColumns(board: string) {
@@ -47,7 +55,7 @@ async function view(client: SupabaseClient, board: string) {
   return must(await client.rpc("get_board_view", { p_board: board })) as {
     board: { locked: boolean; access: string; can_write: boolean };
     columns: { id: string; hidden_count: number; effective_hide: string }[];
-    cards: { id: string; author_id: string | null; author_name: string | null; is_mine: boolean }[];
+    cards: { id: string; author_id: string | null; author_name: string | null; author_role?: string | null; is_mine: boolean }[];
     criteria: { id: string }[];
   } | null;
 }
@@ -68,6 +76,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (uploaded.length) await admin.storage.from(BUCKET).remove(uploaded);
   await admin.from("projects").delete().like("title", `${TEST_PREFIX}%`);
+  await admin.from("criteria").delete().like("name", `${TEST_PREFIX}%`);
   for (const id of tempUsers) await admin.auth.admin.deleteUser(id);
 });
 
@@ -128,17 +137,19 @@ describe("AC3 보드 트리", () => {
 });
 
 describe("AC4 열 개수", () => {
-  it("기본 열 5개, 9번째 추가와 마지막 열 삭제를 거부한다", async () => {
-    const board = await newBoard();
-    const cols = await firstColumns(board);
-    expect(cols.map((c) => c.name)).toEqual(["발산", "변환", "수렴", "실행", "완료"]);
-    for (let i = 6; i <= 8; i++) must(await ta.from("columns").insert({ board_id: board, name: `열${i}`, position: i }));
-    expect(expectError(await ta.from("columns").insert({ board_id: board, name: "열9", position: 9 }))).toContain(
+  it("새 보드는 빈 화면, 60개까지 추가, 61번째는 거부, 모두 지울 수 있다", async () => {
+    const board = await newBoard({}, ta, project, false);
+    expect(await firstColumns(board)).toHaveLength(0);
+    must(
+      await ta
+        .from("columns")
+        .insert(Array.from({ length: MAX_COLUMNS }, (_, i) => ({ board_id: board, name: `열${i + 1}`, position: i + 1 }))),
+    );
+    expect(expectError(await ta.from("columns").insert({ board_id: board, name: "열초과", position: 999 }))).toContain(
       "COLUMN_LIMIT",
     );
-    const all = await firstColumns(board);
-    for (const c of all.slice(1)) must(await ta.from("columns").delete().eq("id", c.id));
-    expect(expectError(await ta.from("columns").delete().eq("id", all[0].id))).toContain("COLUMN_LIMIT");
+    must(await ta.from("columns").delete().eq("board_id", board));
+    expect(await firstColumns(board)).toHaveLength(0);
   });
 
   it("학생은 열을 바꿀 수 없다", async () => {
@@ -204,7 +215,7 @@ describe("AC18 보드 권한", () => {
 
 describe("AC5·AC12 카드 권한과 활동 기록", () => {
   let board: string;
-  let cols: { id: string }[];
+  let cols: { id: string; name: string }[];
   let card: string;
 
   beforeAll(async () => {
@@ -236,14 +247,14 @@ describe("AC5·AC12 카드 권한과 활동 기록", () => {
       to_column: string | null;
     }[];
     expect(acts.map((a) => a.action)).toEqual(["create", "move", "move"]);
-    expect(acts[1]).toMatchObject({ from_column: "발산", to_column: "변환" });
-    expect(acts[2]).toMatchObject({ from_column: "변환", to_column: "수렴" });
+    expect(acts[1]).toMatchObject({ from_column: cols[0].name, to_column: cols[1].name });
+    expect(acts[2]).toMatchObject({ from_column: cols[1].name, to_column: cols[2].name });
   });
 });
 
 describe("AC8·AC9 가리기", () => {
   let board: string;
-  let cols: { id: string }[];
+  let cols: { id: string; name: string }[];
   let mine: string;
   let other: string;
 
@@ -313,6 +324,23 @@ describe("AC8·AC9 가리기", () => {
     expect((await view(ta, board))?.cards).toHaveLength(2);
   });
 
+  it("교사가 쓴 카드는 가리기와 상관없이 학생에게 보인다", async () => {
+    const t = must(await addCard(ta, board, cols[0].id, "교사 안내")).id;
+    try {
+      for (const mode of ["hidden", "count", "anonymous"]) {
+        await setMode(mode);
+        const v = await view(s2, board);
+        const c = v?.cards.find((x) => x.id === t);
+        expect(c?.author_id).toBe(TA);
+        expect(c?.author_role).toBe("teacher");
+        if (mode === "count") expect(v?.columns[0].hidden_count).toBe(1);
+        expect(must(await s2.from("cards").select("id").eq("id", t))).toHaveLength(1);
+      }
+    } finally {
+      must(await ta.from("cards").delete().eq("id", t));
+    }
+  });
+
   it("실시간 신호(board_events)에는 내용이 없다", async () => {
     const rows = must(await s2.from("board_events").select("*").eq("board_id", board)) as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
@@ -341,7 +369,7 @@ describe("AC10 개인 하위 보드", () => {
       owner_id: string;
     }[];
     expect(all).toHaveLength(30);
-    expect(must(await ta.from("columns").select("id").eq("board_id", all[0].id))).toHaveLength(5);
+    expect(must(await ta.from("columns").select("id").eq("board_id", all[0].id))).toHaveLength(1);
 
     const seen = must(await s1.from("boards").select("id, owner_id").eq("parent_id", parent)) as { owner_id: string }[];
     expect(seen).toHaveLength(1);
@@ -391,7 +419,8 @@ describe("AC13·AC15·AC16 평가 기준과 평가", () => {
   let crit: string;
 
   beforeAll(async () => {
-    board = await newBoard({ default_access: "read" });
+    // 동료평가가 켜져 있으면 학생도 기준을 보므로, 미리 보여주기만 확인하려고 끈다
+    board = await newBoard({ default_access: "read", peer_review: false });
   });
 
   it("단계 1개·6개는 거부, 2~5개는 허용", async () => {
@@ -452,6 +481,72 @@ describe("AC13·AC15·AC16 평가 기준과 평가", () => {
         .single(),
     ).id;
     expect(copy).not.toBe(crit);
+  });
+});
+
+describe("동료평가", () => {
+  const levels = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `단계${i + 1}`, score: i + 1 }));
+  let board: string;
+  let crit: string;
+
+  beforeAll(async () => {
+    board = await newBoard({ default_access: "edit" });
+    crit = must(await ta.from("criteria").insert({ name: `${TEST_PREFIX} 동료 기준`, levels: levels(3) }).select("id").single()).id;
+    must(await ta.from("board_criteria").insert({ board_id: board, criterion_id: crit }));
+  });
+
+  const save = (c: SupabaseClient, target: string, stars: Record<string, unknown>) =>
+    c.rpc("save_peer_review", { p_board: board, p_target: target, p_stars: stars });
+  const summary = async (c: SupabaseClient, student: string) =>
+    must(await c.rpc("get_review_summary", { p_board: board, p_student: student })) as {
+      peer_count: number;
+      peer_avg: Record<string, number>;
+      teacher: unknown;
+    } | null;
+
+  it("학생은 기준이 꺼져 있어도 동료평가가 켜져 있으면 기준을 본다", async () => {
+    expect((await view(s1, board))?.criteria.map((c) => c.id)).toEqual([crit]);
+  });
+
+  it("자기 자신은 평가할 수 없다", async () => {
+    expect(expectError(await save(s1, S1, { [crit]: 3 }))).toMatch(/PEER_SELF/);
+  });
+
+  it("다른 학생 평가: 범위 밖 별점·모르는 기준은 버리고 저장, 다시 저장하면 덮어쓴다", async () => {
+    expect(must(await save(s1, S2, { [crit]: 9, nope: 1 }))).toEqual({});
+    expect(must(await save(s1, S2, { [crit]: 3 }))).toEqual({ [crit]: 3 });
+    must(await save(s3, S2, { [crit]: 2 }));
+    must(await save(s3, S2, { [crit]: 1 }));
+    expect(must(await admin.from("peer_reviews").select("id").eq("board_id", board).eq("target_id", S2))).toHaveLength(2);
+  });
+
+  it("받은 학생은 평균과 인원만, 평가한 사람은 볼 수 없다", async () => {
+    const r = await summary(s2, S2);
+    expect(r?.peer_count).toBe(2);
+    expect(r?.peer_avg[crit]).toBe(2);
+    expect(r?.teacher).toBeNull();
+    expect(must(await s2.from("peer_reviews").select("id").eq("board_id", board))).toHaveLength(0);
+    expect(must(await s1.from("peer_reviews").select("target_id").eq("board_id", board))).toEqual([{ target_id: S2 }]);
+  });
+
+  it("다른 학생의 요약은 볼 수 없고, 교사는 볼 수 있다", async () => {
+    expect(await summary(s1, S2)).toBeNull();
+    expect((await summary(ta, S2))?.peer_count).toBe(2);
+  });
+
+  it("교사 평가는 공개된 뒤에만 학생 요약에 나온다", async () => {
+    must(await ta.from("evaluations").upsert({ board_id: board, student_id: S2, levels: { [crit]: 2 } }, { onConflict: "board_id,student_id" }));
+    expect((await summary(s2, S2))?.teacher).toBeNull();
+    expect((await summary(ta, S2))?.teacher).toBeTruthy();
+    must(await ta.from("evaluations").update({ published: true }).eq("board_id", board).eq("student_id", S2));
+    expect((await summary(s2, S2))?.teacher).toBeTruthy();
+  });
+
+  it("동료평가를 끄면 저장할 수 없고 직접 쓰기도 막힌다", async () => {
+    must(await ta.from("boards").update({ peer_review: false }).eq("id", board));
+    expect(expectError(await save(s1, S2, { [crit]: 2 }))).toMatch(/PEER_FORBIDDEN/);
+    expectError(await s1.from("peer_reviews").insert({ board_id: board, target_id: S3, stars: {} }));
+    must(await ta.from("boards").update({ peer_review: true }).eq("id", board));
   });
 });
 

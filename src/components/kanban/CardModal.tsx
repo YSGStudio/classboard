@@ -5,6 +5,10 @@ import type { Activity, CardView, ChecklistItem, ColumnView } from "@/lib/types"
 import { deleteAttachment, deleteCard, getCardActivities, updateCard } from "@/app/actions/cards";
 import { AttachmentDetail } from "@/components/attachments/AttachmentList";
 import { AttachmentUploader } from "@/components/attachments/AttachmentUploader";
+import { columnTint } from "@/lib/columns";
+import { formatKST } from "@/lib/datetime";
+import type { CardField, CardFieldValues } from "@/lib/card-fields";
+import { CardContentInputs, CardContentView } from "./CardContent";
 
 const ACTION_LABEL: Record<Activity["action"], string> = {
   create: "만듦",
@@ -16,12 +20,14 @@ const ACTION_LABEL: Record<Activity["action"], string> = {
 export function CardModal({
   card,
   boardId,
+  template,
   columns,
   onClose,
   onChanged,
 }: {
   card: CardView;
   boardId: string;
+  template: CardField[];
   columns: ColumnView[];
   onClose: () => void;
   onChanged: () => void;
@@ -30,6 +36,7 @@ export function CardModal({
   const [error, setError] = useState("");
   const [title, setTitle] = useState(card.title);
   const [body, setBody] = useState(card.body);
+  const [values, setValues] = useState<CardFieldValues>(card.fields ?? {});
   const [labels, setLabels] = useState(card.labels.join(", "));
   const [due, setDue] = useState(card.due_date ?? "");
   const [checklist, setChecklist] = useState<ChecklistItem[]>(card.checklist);
@@ -54,6 +61,7 @@ export function CardModal({
       const r = await updateCard(card.id, {
         title,
         body,
+        fields: template.length ? values : (card.fields ?? {}),
         labels: labels.split(",").map((s) => s.trim()).filter(Boolean),
         due_date: due || null,
         checklist: patch?.checklist ?? checklist,
@@ -73,7 +81,7 @@ export function CardModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <span className="badge text-white" style={{ background: col?.color }}>
+          <span className="badge text-ink" style={{ background: col ? columnTint(col.color) : undefined }}>
             {col?.name}
           </span>
           <span className="text-sm text-muted">
@@ -98,13 +106,7 @@ export function CardModal({
               </label>
               <input id="card-title" className="input" value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} required />
             </div>
-            <div>
-              <label className="label" htmlFor="card-body">
-                본문
-              </label>
-              <textarea id="card-body" className="input h-28" value={body} maxLength={2000} onChange={(e) => setBody(e.target.value)} />
-              <p className="hint mt-1 text-right">{body.length}/2000</p>
-            </div>
+            <CardContentInputs template={template} body={body} onBody={setBody} values={values} onValues={setValues} idPrefix="card" />
             <div className="grid gap-2.5 sm:grid-cols-2">
               <div>
                 <label className="label" htmlFor="card-labels">
@@ -150,7 +152,7 @@ export function CardModal({
         ) : (
           <div className="flex flex-col gap-2">
             <h2 className="text-[26px] leading-snug break-keep">{card.title}</h2>
-            {card.body && <p className="whitespace-pre-wrap text-ink">{card.body}</p>}
+            <CardContentView card={card} template={template} />
             {card.labels.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {card.labels.map((l) => (
@@ -240,7 +242,7 @@ export function CardModal({
           <ol className="flex flex-col gap-1.5 text-sm text-ink" data-testid="activity-list">
             {activities.map((a) => (
               <li key={a.id} data-testid="activity">
-                <time className="mr-2 text-xs text-muted">{new Date(a.created_at).toLocaleString("ko-KR")}</time>
+                <time className="mr-2 text-xs text-muted">{formatKST(a.created_at)}</time>
                 {a.actor_name ?? "누군가"} — {ACTION_LABEL[a.action]}
                 {a.action === "move" && ` (${a.from_column ?? "?"} → ${a.to_column ?? "?"})`}
               </li>

@@ -56,15 +56,6 @@ export function ProjectForm({ project, onDone }: { project?: Project; onDone?: (
         </label>
         <input id="p-end" type="date" className="input" value={v.end_date} onChange={(e) => setV({ ...v, end_date: e.target.value })} />
       </div>
-      <fieldset className="sm:col-span-2">
-        <legend className="label">진행 방식</legend>
-        <label className="mr-4 text-sm">
-          <input type="radio" checked={v.flow === "parallel"} onChange={() => setV({ ...v, flow: "parallel" })} /> 병렬형(모든 보드 열림)
-        </label>
-        <label className="text-sm">
-          <input type="radio" checked={v.flow === "sequential"} onChange={() => setV({ ...v, flow: "sequential" })} /> 순차형(교사가 연 보드만)
-        </label>
-      </fieldset>
       {error && <p className="text-sm text-red-700 sm:col-span-2">{error}</p>}
       <div className="sm:col-span-2">
         <button className="btn-primary" disabled={pending}>

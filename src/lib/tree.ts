@@ -49,3 +49,34 @@ export function roots(nodes: TreeNode[]): TreeNode[] {
     .filter((n) => !n.parent_id || !ids.has(n.parent_id))
     .sort((a, b) => a.position - b.position || a.title.localeCompare(b.title, "ko"));
 }
+
+/** 드래그 앤 드롭으로 놓을 자리: 어떤 작업장의 앞/뒤(형제) 또는 안(마지막 자식) */
+export type DropPlace = { overId: string; where: "before" | "after" | "inside" };
+
+export type DropResult =
+  | { ok: true; parentId: string | null; order: string[] }
+  | { ok: false; reason: "same" | "cycle" | "personal" | "missing" };
+
+/**
+ * 드롭 결과 계산(순수 함수). 새 부모와, 새 부모 아래 형제들의 최종 순서(order)를 돌려준다.
+ * - 자기 자신이나 자기 하위로는 옮길 수 없다(cycle)
+ * - 학생 개인 보드는 다른 부모로 옮길 수 없다(personal) — 같은 부모 안 순서 바꾸기는 된다
+ */
+export function computeDrop(nodes: TreeNode[], movingId: string, place: DropPlace): DropResult {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const moving = byId.get(movingId);
+  const over = byId.get(place.overId);
+  if (!moving || !over) return { ok: false, reason: "missing" };
+  if (movingId === place.overId) return { ok: false, reason: "same" };
+  const parentId = place.where === "inside" ? over.id : over.parent_id;
+  if (parentId && (parentId === movingId || descendants(nodes, movingId).has(parentId))) return { ok: false, reason: "cycle" };
+  if (moving.kind === "personal" && parentId !== moving.parent_id) return { ok: false, reason: "personal" };
+  const siblings = (childrenMap(nodes).get(parentId) ?? []).map((n) => n.id).filter((id) => id !== movingId);
+  let index = siblings.length;
+  if (place.where !== "inside") {
+    const i = siblings.indexOf(over.id);
+    index = place.where === "before" ? i : i + 1;
+  }
+  siblings.splice(index, 0, movingId);
+  return { ok: true, parentId, order: siblings };
+}

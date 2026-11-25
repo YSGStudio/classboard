@@ -4,10 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { fail, friendlyDbError, type ActionResult } from "@/lib/action-result";
 import { removeAttachmentFiles } from "@/lib/storage-cleanup";
 import type { Activity, ChecklistItem } from "@/lib/types";
+import { sanitizeFieldValues, type CardFieldValues } from "@/lib/card-fields";
 
 export type CardInput = {
   title: string;
   body: string;
+  /** 보드 카드 형식의 항목별 값 */
+  fields?: CardFieldValues;
   labels: string[];
   due_date: string | null;
   checklist: ChecklistItem[];
@@ -23,7 +26,9 @@ function clean(input: CardInput): CardInput | string {
     .filter((c) => c.text.trim())
     .slice(0, 50)
     .map((c) => ({ text: c.text.trim().slice(0, 200), done: !!c.done }));
-  return { title, body: input.body, labels, due_date: input.due_date || null, checklist };
+  const fields = sanitizeFieldValues(input.fields);
+  if (typeof fields === "string") return fields;
+  return { title, body: input.body, fields, labels, due_date: input.due_date || null, checklist };
 }
 
 export async function createCard(

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Criterion } from "@/lib/criteria";
 import { saveEvaluation, setEvaluationPublished } from "@/app/actions/evaluations";
+import { formatKST } from "@/lib/datetime";
 
 type Initial = { levels: Record<string, number>; feedback: string; published: boolean; updated_at: string } | null;
 
@@ -27,7 +28,7 @@ export function EvaluationForm({
   const [levels, setLevels] = useState<Record<string, number>>(initial?.levels ?? {});
   const [feedback, setFeedback] = useState(initial?.feedback ?? "");
   const [published, setPublished] = useState(initial?.published ?? false);
-  const [status, setStatus] = useState(initial ? `저장됨 ${new Date(initial.updated_at).toLocaleTimeString("ko-KR")}` : "");
+  const [status, setStatus] = useState(initial ? `저장됨 ${formatKST(initial.updated_at, "time")}` : "");
   const [pending, start] = useTransition();
   const dirty = useRef(false);
   const latest = useRef({ levels, feedback });
@@ -40,7 +41,7 @@ export function EvaluationForm({
     dirty.current = false;
     setStatus("저장 중…");
     const r = await saveEvaluation(boardId, studentId, latest.current.levels, latest.current.feedback);
-    setStatus(r.ok ? `저장됨 ${new Date(r.data!.updated_at).toLocaleTimeString("ko-KR")}` : `저장 실패: ${r.error}`);
+    setStatus(r.ok ? `저장됨 ${formatKST(r.data!.updated_at, "time")}` : `저장 실패: ${r.error}`);
   };
 
   const change = (next: { levels?: Record<string, number>; feedback?: string }) => {

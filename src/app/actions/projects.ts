@@ -22,7 +22,7 @@ function clean(input: ProjectInput): ProjectInput | string {
   const start_date = input.start_date || null;
   const end_date = input.end_date || null;
   if (start_date && end_date && end_date < start_date) return "종료일이 시작일보다 빠릅니다.";
-  return { title, goal: input.goal, start_date, end_date, flow: input.flow === "sequential" ? "sequential" : "parallel" };
+  return { title, goal: input.goal, start_date, end_date, flow: "parallel" };
 }
 
 export async function createProject(input: ProjectInput): Promise<ActionResult<{ id: string }>> {
